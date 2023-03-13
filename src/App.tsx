@@ -3,6 +3,10 @@ import './App.css';
 import { io, Socket } from 'socket.io-client';
 import axios from 'axios';
 
+type Response = { type: 'wait', requestId: string, socketToken: string, config: any } | { type: 'accept', token: string }
+
+const windows: { [url: string]: Window | null } = {};
+
 function App() {
   const [error, setError] = useState<ReactNode>('');
   const [info, setInfo] = useState('');
@@ -18,8 +22,19 @@ function App() {
     const payload = Array.from(searchParams.keys()).reduce((acc, key) => ({ ...acc, [key]: searchParams.get(key) }), {})
 
     axios
-      .post<{ requestId: string, socketToken: string, config: any }>('http://localhost:3000/join', { serverId: id, payload })
+      .post<Response>('http://localhost:3000/join', { serverId: id, payload })
       .then(({ data }) => {
+        if (data.type === 'accept') {
+          const a = document.createElement('a');
+
+          a.href = 'http://localhost:5174/?token=' + encodeURIComponent(data.token);
+
+          document.body.appendChild(a);
+
+          a.click();
+          return;
+        }
+
         socket = io('http://localhost:3000', { query: { jwt: data.socketToken } });
 
         setConfig(data.config);
@@ -45,14 +60,15 @@ function App() {
         });
 
         socket.on('join-request-open-page', (url: string) => {
-          const a = document.createElement('a');
+          windows[url] = window.open(url, "mozillaWindow", "popup");
+        });
 
-          a.href = url;
-          a.target = '_blank';
+        socket.on('join-request-close-page', (url: string) => {
+          const win = windows[url];
 
-          document.body.appendChild(a);
-
-          a.click();
+          if (win) {
+            win.close();
+          }
         });
 
         socket.on('join-request-error', () => {
