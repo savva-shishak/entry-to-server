@@ -1,9 +1,6 @@
 import { ReactNode, useEffect, useState } from 'react';
+import { joinRequest } from './joinRequest';
 import './App.css';
-import { io, Socket } from 'socket.io-client';
-import axios from 'axios';
-
-type Response = { type: 'wait', requestId: string, socketToken: string, config: any } | { type: 'accept', token: string }
 
 const windows: { [url: string]: Window | null } = {};
 
@@ -13,79 +10,61 @@ function App() {
   const [config, setConfig] = useState<any>({})
 
   useEffect(() => {
-    let socket: Socket;
-
     const searchParams = new URLSearchParams(window.location.search);
 
     const id = window.location.pathname.replace('/', '');
 
     const payload = Array.from(searchParams.keys()).reduce((acc, key) => ({ ...acc, [key]: searchParams.get(key) }), {})
 
-    axios
-      .post<Response>('http://localhost:3000/join', { serverId: id, payload })
-      .then(({ data }) => {
-        if (data.type === 'accept') {
-          const a = document.createElement('a');
+    return joinRequest({
+      serverId: id,
+      payload,
+      onAccept(token, clientUrl) {
+        const a = document.createElement('a');
 
-          a.href = 'http://localhost:5174/?token=' + encodeURIComponent(data.token);
+        a.href = clientUrl + '/?token=' + token;
+        a.style.display = 'none';
 
-          document.body.appendChild(a);
+        document.body.appendChild(a);
 
-          a.click();
-          return;
-        }
+        a.click();
 
-        socket = io('http://localhost:3000', { query: { jwt: data.socketToken } });
-
-        setConfig(data.config);
-
-        socket.on('join-request-info', (info: string) => {
-          setInfo(info);
-          setError('');
-        });
-
-        socket.on('join-request-accept', (token: string) => {
-          const a = document.createElement('a');
-
-          a.href = 'http://localhost:5174/?token=' + encodeURIComponent(token);
-
-          document.body.appendChild(a);
-
-          a.click();
-        });
-
-        socket.on('join-request-reject', (reason: string) => {
-          setError(<>Подключение к серверу запрещено по причине: <b>{reason}</b></>);
-          setInfo('');
-        });
-
-        socket.on('join-request-open-page', (url: string) => {
-          windows[url] = window.open(url, "mozillaWindow", "popup");
-        });
-
-        socket.on('join-request-close-page', (url: string) => {
-          const win = windows[url];
-
-          if (win) {
-            win.close();
-          }
-        });
-
-        socket.on('join-request-error', () => {
-          setError('При выходе на страницу один из плагинов вызвал ошибку');
-          setInfo('');
-        });
-      })
-      .catch(() => {
-        setError('Комната не найдена');
+        document.body.removeChild(a);
+      },
+      onReject(msg, pluginId, pluginName) {
         setInfo('');
-      });
+        setError(
+          <>
+            Вход в комнату запрещён по причине:
+            <span style={{ marginLeft: '5px', color: 'red' }}>{msg}</span>
+            <div style={{ fontSize: '0.8em' }}>
+              Запрещено плагином "{pluginName}" ({pluginId})
+            </div>
+          </>
+        );
+      },
+      onInfo(msg) {
+        setError('');
+        setInfo(msg);
+      },
+      onError(msg) {
+        setError(msg);
+        setInfo('');
+      },
+      onOpenPage(url) {
+        windows[url] = window.open(url, '', 'popup');
+      },
+      onClosePage(url) {
+        const win = windows[url];
 
-    return () => {
-      if (socket) {
-        socket.close(); 
-      }
-    }
+        if (win) {
+          win.close();
+        }
+      },
+      onConfig(config) {
+        setConfig(config);
+      },
+    })
   }, []);
 
   return (
