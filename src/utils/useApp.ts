@@ -1,6 +1,6 @@
 import axios from 'axios';
 import { ReactNode, useEffect, useState } from 'react';
-import { io } from 'socket.io-client';
+import { Socket, io } from 'socket.io-client';
 import { openWindowHolder } from './WindowHolder';
 import { RequestToAuth } from '../types';
 
@@ -9,6 +9,14 @@ const JOIN_URL = (id: string) => (import.meta as any).env.VITE_SERVER_URL + '/ap
 
 let closeAuthWindow = () => {};
 let closeCoreWindow = () => {};
+
+let socket: Socket | null = null;
+
+export function noWait(feedback?: string) {
+  if (socket) {
+    socket.emit('no-wait', feedback)
+  }
+}
 
 export function useApp() {
   const [error, setError] = useState<ReactNode>('');
@@ -25,7 +33,7 @@ export function useApp() {
       setConfig(waitingPageConfig);
       // closeAuthWindow = openWindowHolder(authPage);
 
-      const socket = io(SOCKET_URL, { query: { jwt: accessToken } });
+      socket = io(SOCKET_URL, { query: { jwt: accessToken } });
 
       socket.on('auth-success', ({ username, userId, avatar }) => {
         setUser({ userId, username, avatar });
@@ -53,11 +61,11 @@ export function useApp() {
         setError('');
       });
 
-      socket.on('join-error', (data) => {
+      socket.on('join-error', (reason: string) => {
         // TODO Действия при ошибке входа
       });
 
-      socket.on('join-success', (data) => {
+      socket.on('join-success', ({ token }: { token: string }) => {
         // TODO Действия при успешном входе
       });
     })();
